@@ -14,6 +14,8 @@ interface Props {
   showMinorCities: boolean;
   onToggleMinorCities: () => void;
   minorLoading: boolean;
+  showUnmappedHubs?: boolean;
+  onToggleUnmappedHubs?: () => void;
 }
 
 function pct(v: number | null | undefined) {
@@ -45,6 +47,9 @@ function buildColumns(
   return cols;
 }
 
+const isUnmappedHub = (r: IndexedRecord) =>
+  typeof r.hub_name === "string" && r.hub_name.startsWith("[Unmapped]");
+
 export default function IndexedLevel({
   title,
   data,
@@ -56,14 +61,24 @@ export default function IndexedLevel({
   showMinorCities,
   onToggleMinorCities,
   minorLoading,
+  showUnmappedHubs,
+  onToggleUnmappedHubs,
 }: Props) {
   const { historical_keys: hist, current_key: curKey, data: records } = data;
 
   const makeKey = (rec: IndexedRecord) =>
     groupFields.map((f) => rec[f.key] ?? "").join("||");
 
-  const majorRecords = records.filter((r) => MAJOR_CITIES.has(r.city_name));
-  const minorRecords = records.filter((r) => !MAJOR_CITIES.has(r.city_name));
+  const hasHubField = groupFields.some((f) => f.key === "hub_name");
+  const mappedRecords = hasHubField
+    ? records.filter((r) => !isUnmappedHub(r))
+    : records;
+  const unmappedRecords = hasHubField
+    ? records.filter((r) => isUnmappedHub(r))
+    : [];
+
+  const majorRecords = mappedRecords.filter((r) => MAJOR_CITIES.has(r.city_name));
+  const minorRecords = mappedRecords.filter((r) => !MAJOR_CITIES.has(r.city_name));
   const totalCols = groupFields.length + hist.length * 3 + hist.length + 1 + 4;
 
   const renderRow = (rec: IndexedRecord) => {
@@ -116,21 +131,35 @@ export default function IndexedLevel({
     <div className="overflow-x-auto">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-bold">{title}</h2>
-        <button
-          className={`px-3 py-1 text-sm rounded transition ${
-            showMinorCities
-              ? "bg-gray-700 text-white hover:bg-gray-800"
-              : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
-          }`}
-          onClick={onToggleMinorCities}
-          disabled={minorLoading}
-        >
-          {minorLoading
-            ? "Loading..."
-            : showMinorCities
-            ? "Hide Minor Cities"
-            : "Show Minor Cities"}
-        </button>
+        <div className="flex gap-2">
+          {hasHubField && onToggleUnmappedHubs && unmappedRecords.length > 0 && (
+            <button
+              className={`px-3 py-1 text-sm rounded transition ${
+                showUnmappedHubs
+                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                  : "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
+              }`}
+              onClick={onToggleUnmappedHubs}
+            >
+              {showUnmappedHubs ? "Hide Unmapped Hubs" : `Show Unmapped Hubs (${unmappedRecords.length})`}
+            </button>
+          )}
+          <button
+            className={`px-3 py-1 text-sm rounded transition ${
+              showMinorCities
+                ? "bg-gray-700 text-white hover:bg-gray-800"
+                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
+            }`}
+            onClick={onToggleMinorCities}
+            disabled={minorLoading}
+          >
+            {minorLoading
+              ? "Loading..."
+              : showMinorCities
+              ? "Hide Minor Cities"
+              : "Show Minor Cities"}
+          </button>
+        </div>
       </div>
 
       <table>
@@ -180,6 +209,21 @@ export default function IndexedLevel({
                 </td>
               </tr>
               {minorRecords.map(renderRow)}
+            </>
+          )}
+
+          {/* Unmapped hubs section */}
+          {showUnmappedHubs && unmappedRecords.length > 0 && (
+            <>
+              <tr>
+                <td
+                  colSpan={totalCols}
+                  className="bg-amber-50 text-amber-700 font-semibold text-xs px-2 py-1"
+                >
+                  Unmapped Hubs
+                </td>
+              </tr>
+              {unmappedRecords.map(renderRow)}
             </>
           )}
         </tbody>

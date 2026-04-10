@@ -92,6 +92,13 @@ GSHEET_FESTIVAL_DATES = {
     "worksheet": "List",
 }
 
+# Hub mapping – maps old (closed) hubs to their current replacements.
+# Columns: city_name, hub_name (current), ref hub (old hub or "old").
+GSHEET_HUB_MAPPING = {
+    "url": "https://docs.google.com/spreadsheets/d/1RGgvLVXQxKdlftOCyrmOPfObKvJ6Jbakl735p4FqtKU",
+    "worksheet": "all cities hub mapping",
+}
+
 # Fallback for SKU Class Prod mapping when product_id not in P Master.
 # Maps unique product name -> SKU Class Prod.
 GSHEET_CC_CAT = {

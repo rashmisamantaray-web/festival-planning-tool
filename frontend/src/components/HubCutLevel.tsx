@@ -10,18 +10,28 @@ interface Props {
   showMinorCities: boolean;
   onToggleMinorCities: () => void;
   minorLoading: boolean;
+  showUnmappedHubs?: boolean;
+  onToggleUnmappedHubs?: () => void;
 }
 
 const TOTAL_COLS = 10;
+
+const isUnmappedHub = (r: HubCutRecord) =>
+  typeof r.hub_name === "string" && r.hub_name.startsWith("[Unmapped]");
 
 export default function HubCutLevel({
   data,
   showMinorCities,
   onToggleMinorCities,
   minorLoading,
+  showUnmappedHubs,
+  onToggleUnmappedHubs,
 }: Props) {
-  const majorRecords = data.data.filter((r) => MAJOR_CITIES.has(r.city_name));
-  const minorRecords = data.data.filter((r) => !MAJOR_CITIES.has(r.city_name));
+  const mappedRecords = data.data.filter((r) => !isUnmappedHub(r));
+  const unmappedRecords = data.data.filter((r) => isUnmappedHub(r));
+
+  const majorRecords = mappedRecords.filter((r) => MAJOR_CITIES.has(r.city_name));
+  const minorRecords = mappedRecords.filter((r) => !MAJOR_CITIES.has(r.city_name));
 
   const renderRow = (rec: HubCutRecord, i: number) => (
     <tr key={i}>
@@ -44,21 +54,35 @@ export default function HubCutLevel({
         <h2 className="text-lg font-bold">
           Level 5 — City-Hub-SubCat-CutClass (Derived)
         </h2>
-        <button
-          className={`px-3 py-1 text-sm rounded transition ${
-            showMinorCities
-              ? "bg-gray-700 text-white hover:bg-gray-800"
-              : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
-          }`}
-          onClick={onToggleMinorCities}
-          disabled={minorLoading}
-        >
-          {minorLoading
-            ? "Loading..."
-            : showMinorCities
-            ? "Hide Minor Cities"
-            : "Show Minor Cities"}
-        </button>
+        <div className="flex gap-2">
+          {onToggleUnmappedHubs && unmappedRecords.length > 0 && (
+            <button
+              className={`px-3 py-1 text-sm rounded transition ${
+                showUnmappedHubs
+                  ? "bg-amber-600 text-white hover:bg-amber-700"
+                  : "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
+              }`}
+              onClick={onToggleUnmappedHubs}
+            >
+              {showUnmappedHubs ? "Hide Unmapped Hubs" : `Show Unmapped Hubs (${unmappedRecords.length})`}
+            </button>
+          )}
+          <button
+            className={`px-3 py-1 text-sm rounded transition ${
+              showMinorCities
+                ? "bg-gray-700 text-white hover:bg-gray-800"
+                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200"
+            }`}
+            onClick={onToggleMinorCities}
+            disabled={minorLoading}
+          >
+            {minorLoading
+              ? "Loading..."
+              : showMinorCities
+              ? "Hide Minor Cities"
+              : "Show Minor Cities"}
+          </button>
+        </div>
       </div>
 
       <table>
@@ -100,6 +124,21 @@ export default function HubCutLevel({
                 </td>
               </tr>
               {minorRecords.map((rec, i) => renderRow(rec, majorRecords.length + i))}
+            </>
+          )}
+
+          {/* Unmapped hubs */}
+          {showUnmappedHubs && unmappedRecords.length > 0 && (
+            <>
+              <tr>
+                <td
+                  colSpan={TOTAL_COLS}
+                  className="bg-amber-50 text-amber-700 font-semibold text-xs px-2 py-1"
+                >
+                  Unmapped Hubs
+                </td>
+              </tr>
+              {unmappedRecords.map((rec, i) => renderRow(rec, majorRecords.length + minorRecords.length + i))}
             </>
           )}
         </tbody>

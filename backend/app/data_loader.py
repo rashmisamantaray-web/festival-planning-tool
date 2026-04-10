@@ -41,6 +41,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from app.config import (
     GSHEET_AVL_FLAG,
     GSHEET_CREDENTIALS_PATH,
+    GSHEET_HUB_MAPPING,
     GSHEET_P_MASTER,
     GSHEET_SCOPES,
     GSHEET_SELL_THROUGH_FACTOR,
@@ -165,6 +166,43 @@ def _load_avl_flag() -> pd.DataFrame:
         df = _read_gsheet(GSHEET_AVL_FLAG["url"], GSHEET_AVL_FLAG["worksheet"])
         _cache["avl_flag"] = df[["product_id", "Product Name", "Avl Flag"]]
     return _cache["avl_flag"]
+
+
+def load_hub_mapping() -> tuple[dict[str, str], set[str]]:
+    """Load the hub mapping sheet and return a remap dict + current hubs set.
+
+    The sheet has columns: city_name, hub_name (current), ref hub (old).
+    - ``ref hub = "old"`` means the hub in ``hub_name`` is itself a legacy
+      hub that is still active — no remapping needed.
+    - Otherwise ``ref hub`` is the name of a closed hub whose historical
+      data should be reassigned to the current hub in ``hub_name``.
+
+    Returns
+    -------
+    (remap, current_hubs)
+        remap : {old_hub_name → current_hub_name}  (case-stripped)
+        current_hubs : set of all current hub names
+    """
+    if "hub_mapping" not in _cache:
+        df = _read_gsheet(GSHEET_HUB_MAPPING["url"], GSHEET_HUB_MAPPING["worksheet"])
+        df.columns = df.columns.str.strip()
+        for col in ("city_name", "hub_name", "ref hub"):
+            df[col] = df[col].astype(str).str.strip()
+
+        current_hubs: set[str] = set(df["hub_name"].unique())
+
+        remap: dict[str, str] = {}
+        for _, row in df.iterrows():
+            ref = row["ref hub"]
+            if ref.lower() != "old" and ref:
+                remap[ref] = row["hub_name"]
+
+        _cache["hub_mapping"] = (remap, current_hubs)
+        logger.info(
+            f"  Hub mapping loaded: {len(current_hubs)} current hubs, "
+            f"{len(remap)} old→current remaps"
+        )
+    return _cache["hub_mapping"]
 
 
 def _load_subcat_type_mapping() -> pd.DataFrame:

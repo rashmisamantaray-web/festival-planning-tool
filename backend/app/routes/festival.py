@@ -36,7 +36,7 @@ from pydantic import BaseModel
 from app.festival_dates import load_festival_calendar
 
 logger = logging.getLogger(__name__)
-from app.data_loader import load_and_compute
+from app.data_loader import load_and_compute, load_hub_mapping
 from app.level_city import compute_city_level, recalculate_city_finals
 from app.level_city_subcat import (
     compute_city_subcat_level,
@@ -261,6 +261,27 @@ def compute_festival(request: Request, req: ComputeRequest):
             logger.info(f"Filtered to major cities only: {len(product_df)} rows")
             if product_df.empty:
                 logger.warning("No rows remain after filtering to major cities — results may be empty")
+
+        # ── Hub remapping: closed hubs → current replacements ────────
+        remap, current_hubs = load_hub_mapping()
+        rows_before = len(product_df)
+        if remap:
+            product_df["hub_name"] = product_df["hub_name"].replace(remap)
+        unmapped_mask = ~product_df["hub_name"].isin(current_hubs)
+        n_unmapped = int(unmapped_mask.sum())
+        if n_unmapped > 0:
+            product_df.loc[unmapped_mask, "hub_name"] = (
+                "[Unmapped] " + product_df.loc[unmapped_mask, "hub_name"]
+            )
+            logger.info(
+                f"Hub remap: {n_unmapped:,} rows tagged as unmapped "
+                f"({product_df.loc[unmapped_mask, 'hub_name'].nunique()} hubs)"
+            )
+        remapped = rows_before - len(product_df)
+        logger.info(
+            f"Hub remap done: {len(remap)} old→current rules applied, "
+            f"{len(current_hubs)} current hubs, {len(product_df)} rows"
+        )
 
         display_name = f"Dates {req.current_date}"
         current_key = "current"

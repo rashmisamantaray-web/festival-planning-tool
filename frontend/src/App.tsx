@@ -80,6 +80,8 @@ export default function App() {
   // ── Minor cities ───────────────────────────────────────────────────────────
   const [showMinorCities, setShowMinorCities] = useState(false);
   const [minorLoading, setMinorLoading] = useState(false);
+  // ── Unmapped hubs ─────────────────────────────────────────────────────────
+  const [showUnmappedHubs, setShowUnmappedHubs] = useState(false);
   // Stored dates so we can re-compute with minor cities
   const [lastCurrentDate, setLastCurrentDate] = useState("");
   const [lastReferenceDates, setLastReferenceDates] = useState<string[]>([]);
@@ -102,6 +104,7 @@ export default function App() {
       setL3Formulas({});
       setL4Formulas({});
       setShowMinorCities(false);
+      setShowUnmappedHubs(false);
       setLastCurrentDate(currentDate);
       setLastReferenceDates(referenceDates);
       try {
@@ -485,6 +488,8 @@ export default function App() {
                 showMinorCities={showMinorCities}
                 onToggleMinorCities={handleToggleMinorCities}
                 minorLoading={minorLoading}
+                showUnmappedHubs={showUnmappedHubs}
+                onToggleUnmappedHubs={() => setShowUnmappedHubs((v) => !v)}
               />
             )}
 
@@ -494,6 +499,8 @@ export default function App() {
                 showMinorCities={showMinorCities}
                 onToggleMinorCities={handleToggleMinorCities}
                 minorLoading={minorLoading}
+                showUnmappedHubs={showUnmappedHubs}
+                onToggleUnmappedHubs={() => setShowUnmappedHubs((v) => !v)}
               />
             )}
           </div>
