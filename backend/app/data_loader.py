@@ -27,6 +27,7 @@ Pipeline summary
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import time
@@ -140,29 +141,29 @@ _cache: dict[str, pd.DataFrame] = {}
 
 
 def _load_p_master() -> pd.DataFrame:
-    """Load P_Master sheet → columns: Product id, Anchor ID, Anchor Name.
+    """Load P_Master sheet → columns: Product id, Anchor ID, Anchor Name,
+    Cut Classification.
 
     This maps every product_id to its Anchor group (used later to
     compute plan_sum at the anchor level for availability logic).
+    ``Cut Classification`` is used as the grouping dimension ("cut class")
+    in Levels 3 and 5.
     """
     if "p_master" not in _cache:
         df = _read_gsheet(GSHEET_P_MASTER["url"], GSHEET_P_MASTER["worksheet"])
-        _cache["p_master"] = df[["Product id", "Anchor ID", "Anchor Name"]]
+        _cache["p_master"] = df[["Product id", "Anchor ID", "Anchor Name", "Cut Classification"]]
     return _cache["p_master"]
 
 
 def _load_avl_flag() -> pd.DataFrame:
-    """Load Avl_Flag sheet → columns: product_id, Product Name,
-    SKU Class Prod, Avl Flag.
+    """Load Avl_Flag sheet → columns: product_id, Product Name, Avl Flag.
 
     - ``Avl Flag`` = 1 means the product has individual-level availability
       tracking; 0 means we fall back to group-level flags.
-    - ``SKU Class Prod`` is the "Cut Classification" used as a grouping
-      dimension in Levels 3 and 5.
     """
     if "avl_flag" not in _cache:
         df = _read_gsheet(GSHEET_AVL_FLAG["url"], GSHEET_AVL_FLAG["worksheet"])
-        _cache["avl_flag"] = df[["product_id", "Product Name", "SKU Class Prod", "Avl Flag"]]
+        _cache["avl_flag"] = df[["product_id", "Product Name", "Avl Flag"]]
     return _cache["avl_flag"]
 
 
@@ -321,6 +322,8 @@ def load_rds_data(
     logger.info(f"  Data sources used: {sources_used}")
     logger.info(f"  Concatenating {len(frames)} frames...")
     df = pd.concat(frames, ignore_index=True)
+    del frames
+    gc.collect()
     logger.info(f"  Total rows after concat: {len(df)}")
     df["process_dt"] = pd.to_datetime(df["process_dt"])
 
@@ -392,7 +395,8 @@ def compute_avl_corr_sales(raw_df: pd.DataFrame) -> pd.DataFrame:
     DataFrame at the product-hub-day level with Avl_Corr_Sales and all
     grouping columns needed by downstream level computations.
     """
-    df = raw_df.copy()
+    df = raw_df
+    del raw_df
     t0 = time.time()
     logger.info(f"  compute_avl_corr_sales: starting with {len(df)} rows")
 
@@ -412,14 +416,18 @@ def compute_avl_corr_sales(raw_df: pd.DataFrame) -> pd.DataFrame:
     unmapped_pmaster = df["Anchor ID"].isna().sum()
     if unmapped_pmaster > 0:
         logger.warning(f"  Step 1: {unmapped_pmaster} rows have no P_Master match (Anchor ID=NaN)")
+    df.rename(columns={"Cut Classification": "SKU Class Prod"}, inplace=True)
+    unmapped_cut = df["SKU Class Prod"].isna().sum()
+    if unmapped_cut > 0:
+        logger.warning(f"  Step 1: {unmapped_cut} rows have no Cut Classification from P_Master")
     logger.info(f"  Step 1 done: {len(df)} rows")
 
     avl_flag = _load_avl_flag()
     logger.info("  Step 2: Merging Avl_Flag...")
     df = df.merge(avl_flag, on="product_id", how="left")
-    unmapped_avl = df["SKU Class Prod"].isna().sum()
+    unmapped_avl = df["Avl Flag"].isna().sum()
     if unmapped_avl > 0:
-        logger.warning(f"  Step 2: {unmapped_avl} rows have no Avl_Flag match (SKU Class Prod=NaN)")
+        logger.warning(f"  Step 2: {unmapped_avl} rows have no Avl_Flag match (Avl Flag=NaN)")
     logger.info(f"  Step 2 done: {len(df)} rows")
 
     # ── Steps 3-6: Availability logic (full or simplified) ──────────
@@ -491,6 +499,21 @@ def compute_avl_corr_sales(raw_df: pd.DataFrame) -> pd.DataFrame:
             logger.warning("  flag/instances columns missing — setting product_level_avl=1 (no correction)")
             df["product_level_avl"] = 1.0
         logger.info("  Simplified availability done")
+
+    # ── Memory cleanup: drop all intermediate columns ─────────────
+    # After availability is computed, only product_level_avl is needed
+    # going forward.  Drop everything else to free ~60-70% of memory
+    # before the remaining merges.
+    cols_needed = {
+        "city_name", "hub_name", "sub_category", "process_dt",
+        "sales", "revenue", "product_id", "product_name",
+        "SKU Class Prod", "product_level_avl",
+    }
+    drop_cols = [c for c in df.columns if c not in cols_needed]
+    if drop_cols:
+        df.drop(columns=drop_cols, inplace=True)
+        gc.collect()
+        logger.info(f"  Memory cleanup: dropped {len(drop_cols)} intermediate columns, kept {len(df.columns)}")
 
     # ── Step 7: Merge Subcat-Type Mapping ───────────────────────────
     # Maps sub_category → Type (e.g. "Perishable").  Type is used
@@ -572,7 +595,7 @@ def compute_avl_corr_sales(raw_df: pd.DataFrame) -> pd.DataFrame:
         "Avl_Corr_Revenue",# availability-corrected revenue
         "product_id",      # product identifier
         "product_name",    # product display name
-        "SKU Class Prod",  # cut classification (from Avl_Flag sheet)
+        "SKU Class Prod",  # cut classification (from P Master)
     ]
     available = [c for c in keep if c in df.columns]
     missing_keep = [c for c in keep if c not in df.columns]
